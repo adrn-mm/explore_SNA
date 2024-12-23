@@ -40,10 +40,19 @@ min_weight = df['weight'].min()
 max_weight = df['weight'].max()
 df['weight_percentage'] = (df['weight'] - min_weight) / (max_weight - min_weight) * 100
 
+# Warna untuk setiap ekosistem
+ecosystem_colors = {
+    'ECO 1': '#1f77b4',  # Biru
+    'ECO 2': '#ff7f0e',  # Oranye
+    'ECO 3': '#2ca02c',  # Hijau
+    'ECO 4': '#d62728',  # Merah
+    'ECO 5': '#9467bd',  # Ungu
+}
+
 # Streamlit UI untuk menampilkan network graph
 st.title("Network Graph Analysis with Streamlit and PyVis")
 
-# Pilih node dari dropdown untuk menampilkan properti
+# Filter untuk memilih node
 selected_node = st.selectbox("Pilih Node untuk Melihat Propertinya", ['All'] + df['source'].unique().tolist())
 
 # Membuat Network Graph menggunakan PyVis
@@ -52,10 +61,14 @@ net = Network(height="600px", width="100%", notebook=True, directed=True)
 if selected_node == "All":
     # Menampilkan seluruh network graph
     for index, row in df.iterrows():
-        net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=20)
-        net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=20)
+        color = ecosystem_colors[row['ecosystem']]  # Pewarnaan berdasarkan ekosistem
+        label = row['source']  # Menyimpan label seperti biasa (tanpa <b> tag)
+
+        # Menambahkan node dengan font bold untuk node yang dipilih
+        net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=20, color=color)
+        net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=20, color=color)  # Pewarnaan berdasarkan ekosistem
         
-        # Menambahkan edge dengan informasi Amount, Frequency, dan Weight yang dinormalisasi (persentase)
+        # Menambahkan edge dengan informasi yang lebih sederhana (Amount, Frequency, dan Weight yang dinormalisasi)
         net.add_edge(
             row['source'], 
             row['target'], 
@@ -85,6 +98,7 @@ if selected_node == "All":
         }
     }
     """)
+
 else:
     # Filter data untuk hanya menampilkan node yang terhubung dengan node yang dipilih
     connected_nodes = df[(df['source'] == selected_node) | (df['target'] == selected_node)]
@@ -96,16 +110,19 @@ else:
     
     # Menambahkan node dan edge yang terhubung saja
     for index, row in connected_nodes.iterrows():
-        # Menetapkan warna hijau terang untuk node yang terhubung
+        color = ecosystem_colors[row['ecosystem']]  # Pewarnaan berdasarkan ekosistem
+        label = row['source']  # Menyimpan label seperti biasa (tanpa <b> tag)
+
+        # Jika node yang dipilih, buat lebih gelap dengan warna yang lebih intens
         if row['source'] == selected_node:
-            net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=30, color='deepskyblue')  # Node yang dipilih lebih besar dan biru
+            net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=30, color=color, font={'size': 20, 'bold': True})
         else:
-            net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=20, color='lightgreen')  # Node lain hijau muda
+            net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=20, color=color)
 
         if row['target'] == selected_node:
-            net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=30, color='deepskyblue')  # Node yang dipilih lebih besar dan biru
+            net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=30, color=color, font={'size': 20, 'bold': True})
         else:
-            net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=20, color='lightgreen')  # Node lain hijau muda
+            net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=20, color=color)
 
         # Menambahkan edge dengan informasi yang lebih sederhana (Amount, Frequency, dan Weight yang dinormalisasi)
         net.add_edge(
@@ -115,8 +132,8 @@ else:
             title=f"Amount: {row['amount']}\nFrequency: {row['frequency']}\nWeight: {row['weight_percentage']:.2f}%"
         )
 
-    # Menandai node yang dipilih dengan warna merah
-    net.get_node(selected_node)['color'] = 'deepskyblue'
+    # Menandai node yang dipilih dengan warna yang lebih gelap
+    net.get_node(selected_node)['color'] = ecosystem_colors[df.loc[df['source'] == selected_node, 'ecosystem'].values[0]]
 
     # Menambahkan panah pada edge dan menonaktifkan fisika
     net.set_options("""
@@ -154,26 +171,34 @@ with col1:
 with col2:
     # Menampilkan properti node yang dipilih
     if selected_node != "All":
+        # Data untuk node yang dipilih
         node_data = df[(df['source'] == selected_node) | (df['target'] == selected_node)]
 
-        st.subheader(f"Properties of Node {selected_node}:")
+        # Total Incoming Amount dan Total Outgoing Amount
+        total_incoming_amount = node_data[node_data['target'] == selected_node]['amount'].sum()
+        total_outgoing_amount = node_data[node_data['source'] == selected_node]['amount'].sum()
 
-        # Menampilkan jumlah edges (hubungan) untuk node tersebut
-        edges_count = len(node_data)
-        st.write(f"Jumlah Edges: {edges_count}")
-        
-        # Menampilkan jumlah total weight untuk node tersebut
-        total_weight = node_data['weight'].sum()
-        st.write(f"Jumlah Total Weight: {total_weight}")
-        
-        # Menampilkan tipe hubungan
+        # Total Incoming Frequency dan Total Outgoing Frequency
+        total_incoming_frequency = node_data[node_data['target'] == selected_node]['frequency'].sum()
+        total_outgoing_frequency = node_data[node_data['source'] == selected_node]['frequency'].sum()
+
+        # Jenis hubungan dan saluran transaksi
         relationship_types = node_data['type'].unique()
-        st.write(f"Jenis Hubungan: {', '.join(relationship_types)}")
-        
-        # Menampilkan saluran transaksi
         transaction_channels = node_data['channel'].unique()
-        st.write(f"Saluran Transaksi: {', '.join(transaction_channels)}")
-        
-        # Menampilkan data lengkap properti node
-        st.write("Detail Properti Node:")
+
+        # Menampilkan informasi properti node
+        st.subheader(f"Properties of Node {selected_node}:")
+        st.write(f"**Total Incoming Amount**: {total_incoming_amount}")
+        st.write(f"**Total Outgoing Amount**: {total_outgoing_amount}")
+        st.write(f"**Total Incoming Frequency**: {total_incoming_frequency}")
+        st.write(f"**Total Outgoing Frequency**: {total_outgoing_frequency}")
+        st.write(f"**Jenis Hubungan**: {', '.join(relationship_types)}")
+        st.write(f"**Saluran Transaksi**: {', '.join(transaction_channels)}")
+
+        st.write("**Detail Properti Node**:")
         st.write(node_data)
+    
+    # Menampilkan legenda untuk warna ekosistem
+    st.subheader("Legenda Ekosistem:")
+    for ecosystem, color in ecosystem_colors.items():
+        st.markdown(f"<div style='background-color:{color}; padding: 5px; color: white; font-size: 12px; border-radius: 5px;'>{ecosystem}</div>", unsafe_allow_html=True)
