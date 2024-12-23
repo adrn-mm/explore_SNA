@@ -1,20 +1,44 @@
 import streamlit as st
 import pandas as pd
 from pyvis.network import Network
+import random
+import datetime
 
 # Mengatur mode tampilan default menjadi light mode
 st.set_page_config(page_title="Network Graph Analysis", layout="wide")
 
-# Data sample untuk SNA (transaksi nasabah pada berbagai ekosistem)
-data = {
-    'source': ['Nasabah1', 'Nasabah2', 'Nasabah3', 'Nasabah4', 'Nasabah5', 'Nasabah6', 'Nasabah7', 'Nasabah8', 'Nasabah9', 'Nasabah10'],
-    'target': ['MRT', 'TRANSJAKARTA', 'JAKPRO', 'PAM JAYA', 'MRT', 'JAKPRO', 'TRANSJAKARTA', 'PAM JAYA', 'MRT', 'JAKPRO'],
-    'weight': [10, 15, 5, 20, 30, 25, 10, 5, 20, 15],
-    'type': ['transaction', 'transaction', 'transaction', 'transaction', 'transaction', 'transaction', 'transaction', 'transaction', 'transaction', 'transaction']
-}
+# Membuat data transaksi SNA dengan rekening dan ekosistem
+random.seed(42)
 
-# Membuat DataFrame dari data sample
-df = pd.DataFrame(data)
+# Membuat daftar rekening sumber dan tujuan
+accounts = [f"ACC{random.randint(1000, 9999)}" for _ in range(20)]
+ecosystems = ['ECO 1', 'ECO 2', 'ECO 3', 'ECO 4', 'ECO 5']
+types = ['Transfer', 'Pembelian', 'Pembayaran']
+channels = ['ATM', 'Mobile Banking', 'Internet Banking', 'Teller']
+
+# Membuat transaksi dengan data yang lebih besar
+data = []
+for _ in range(100):
+    source_account = random.choice(accounts)
+    destination_account = random.choice([acc for acc in accounts if acc != source_account])
+    ecosystem = random.choice(ecosystems)
+    amount = random.randint(1000, 50000)
+    tgltrx = datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 30))
+    type_ = random.choice(types)  # Jenis transaksi
+    channel = random.choice(channels)  # Saluran transaksi
+    data.append([tgltrx.strftime('%Y-%m-%d'), source_account, destination_account, ecosystem, amount, type_, channel])
+
+# Membuat DataFrame dari data transaksi
+df = pd.DataFrame(data, columns=['tgltrx', 'source', 'target', 'ecosystem', 'amount', 'type', 'channel'])
+
+# Menambahkan kolom frequency dan weight
+df['frequency'] = df.groupby(['source', 'target', 'ecosystem'])['amount'].transform('count')
+df['weight'] = df['amount'] * df['frequency']
+
+# Normalisasi Min-Max untuk menghitung Weight dalam bentuk persentase
+min_weight = df['weight'].min()
+max_weight = df['weight'].max()
+df['weight_percentage'] = (df['weight'] - min_weight) / (max_weight - min_weight) * 100
 
 # Streamlit UI untuk menampilkan network graph
 st.title("Network Graph Analysis with Streamlit and PyVis")
@@ -29,8 +53,15 @@ if selected_node == "All":
     # Menampilkan seluruh network graph
     for index, row in df.iterrows():
         net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=20)
-        net.add_node(row['target'], label=row['target'], title=row['target'], shape="box", size=20)
-        net.add_edge(row['source'], row['target'], value=row['weight'], title=row['type'])
+        net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=20)
+        
+        # Menambahkan edge dengan informasi Amount, Frequency, dan Weight yang dinormalisasi (persentase)
+        net.add_edge(
+            row['source'], 
+            row['target'], 
+            value=row['weight'], 
+            title=f"Amount: {row['amount']}\nFrequency: {row['frequency']}\nWeight: {row['weight_percentage']:.2f}%"
+        )
 
     # Menambahkan panah pada edge dan menonaktifkan fisika
     net.set_options("""
@@ -65,13 +96,27 @@ else:
     
     # Menambahkan node dan edge yang terhubung saja
     for index, row in connected_nodes.iterrows():
-        if row['source'] in all_connected_nodes and row['target'] in all_connected_nodes:
-            net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=20)
-            net.add_node(row['target'], label=row['target'], title=row['target'], shape="box", size=20)
-            net.add_edge(row['source'], row['target'], value=row['weight'], title=row['type'])
+        # Menetapkan warna hijau terang untuk node yang terhubung
+        if row['source'] == selected_node:
+            net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=30, color='deepskyblue')  # Node yang dipilih lebih besar dan biru
+        else:
+            net.add_node(row['source'], label=row['source'], title=row['source'], shape="dot", size=20, color='lightgreen')  # Node lain hijau muda
+
+        if row['target'] == selected_node:
+            net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=30, color='deepskyblue')  # Node yang dipilih lebih besar dan biru
+        else:
+            net.add_node(row['target'], label=row['target'], title=row['target'], shape="dot", size=20, color='lightgreen')  # Node lain hijau muda
+
+        # Menambahkan edge dengan informasi yang lebih sederhana (Amount, Frequency, dan Weight yang dinormalisasi)
+        net.add_edge(
+            row['source'], 
+            row['target'], 
+            value=row['weight'], 
+            title=f"Amount: {row['amount']}\nFrequency: {row['frequency']}\nWeight: {row['weight_percentage']:.2f}%"
+        )
 
     # Menandai node yang dipilih dengan warna merah
-    net.get_node(selected_node)['color'] = 'red'
+    net.get_node(selected_node)['color'] = 'deepskyblue'
 
     # Menambahkan panah pada edge dan menonaktifkan fisika
     net.set_options("""
@@ -124,6 +169,10 @@ with col2:
         # Menampilkan tipe hubungan
         relationship_types = node_data['type'].unique()
         st.write(f"Jenis Hubungan: {', '.join(relationship_types)}")
+        
+        # Menampilkan saluran transaksi
+        transaction_channels = node_data['channel'].unique()
+        st.write(f"Saluran Transaksi: {', '.join(transaction_channels)}")
         
         # Menampilkan data lengkap properti node
         st.write("Detail Properti Node:")
